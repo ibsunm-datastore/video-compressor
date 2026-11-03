@@ -1,0 +1,1238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Video Compressor</title>
+<!-- Enables multi-threaded FFmpeg on hosts that can't send COOP/COEP headers (e.g. GitHub Pages). Reloads the page once on the first visit. -->
+<script src="coi-serviceworker.js"></script>
+<style>
+:root{
+  --bg:#f4f6fa; --card:#ffffff; --text:#0f172a; --muted:#64748b; --faint:#94a3b8;
+  --border:#e2e8f0; --border2:#cbd5e1; --accent:#2563eb; --accent2:#1d4ed8; --accent-l:#eff6ff;
+  --green:#059669; --green-bg:#ecfdf5; --amber:#b45309; --amber-bg:#fffbeb; --red:#dc2626; --red-bg:#fef2f2;
+  --mono:ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --shadow:0 1px 2px rgba(15,23,42,.04),0 4px 16px rgba(15,23,42,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0b1120; --card:#111827; --text:#e5e7eb; --muted:#9ca3af; --faint:#6b7280;
+    --border:#1f2937; --border2:#374151; --accent:#3b82f6; --accent2:#60a5fa; --accent-l:#172554;
+    --green:#34d399; --green-bg:#052e24; --amber:#fbbf24; --amber-bg:#2a1d05; --red:#f87171; --red-bg:#2a0f0f;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:var(--ui);font-size:14px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.logo{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#7c3aed);display:grid;place-items:center;color:#fff;font-size:20px;flex:none}
+header h1{font-size:20px;margin:0;font-weight:800;letter-spacing:-.2px}
+header p{margin:0;color:var(--muted);font-size:13px}
+.badge{margin-left:auto;font-size:11px;font-weight:600;color:var(--green);background:var(--green-bg);border:1px solid color-mix(in srgb,var(--green) 30%,transparent);padding:4px 10px;border-radius:999px}
+.grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:16px}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0 0 12px;font-weight:700}
+.stack{display:flex;flex-direction:column;gap:16px}
+
+/* drop zone */
+.drop{border:2px dashed var(--border2);border-radius:12px;padding:34px 16px;text-align:center;cursor:pointer;transition:.15s;background:var(--bg)}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-l)}
+.drop .big{font-size:34px;line-height:1}
+.drop b{display:block;margin:10px 0 4px;font-size:15px}
+.drop small{color:var(--muted)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--border2);background:var(--card);color:var(--text);
+  border-radius:8px;padding:8px 14px;font:600 13px var(--ui);cursor:pointer;transition:.15s;text-decoration:none}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.pri:hover{background:var(--accent2);border-color:var(--accent2);color:#fff}
+.btn.big{padding:12px 18px;font-size:15px;width:100%}
+.btn.danger{color:var(--red)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* file info */
+.fileinfo{display:none;margin-top:14px}
+.fname{font-weight:700;word-break:break-all}
+video{width:100%;max-height:320px;background:#000;border-radius:10px;margin-top:10px;display:block}
+.note{font-size:12px;color:var(--muted)}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
+.kv div{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;min-width:0}
+.kv span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:700}
+.kv b{font-family:var(--mono);font-size:13px;font-weight:600;word-break:break-word}
+
+/* settings */
+fieldset{border:none;padding:0;margin:0 0 14px}
+legend{font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;padding:0}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg label{position:relative}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:inline-block;border:1px solid var(--border2);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);background:var(--card)}
+.seg input:checked+span{background:var(--accent);border-color:var(--accent);color:#fff}
+.seg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.seg input:disabled+span{opacity:.4;cursor:not-allowed}
+select,input[type=number]{border:1px solid var(--border2);border-radius:8px;padding:6px 8px;background:var(--card);color:var(--text);font:13px var(--ui)}
+input[type=range]{width:100%}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:6px 0;cursor:pointer}
+.chk input{margin-top:3px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:520px){.two{grid-template-columns:1fr}}
+.hide{display:none!important}
+
+/* estimate & messages */
+.est{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:13px}
+.est table{width:100%;border-collapse:collapse}
+.est td{padding:3px 0;vertical-align:top}
+.est td:last-child{text-align:right;font-family:var(--mono);font-weight:600}
+.msg{border-radius:8px;padding:9px 11px;font-size:12.5px;margin-top:8px;border:1px solid}
+.msg.warn{background:var(--amber-bg);color:var(--amber);border-color:color-mix(in srgb,var(--amber) 35%,transparent)}
+.msg.err{background:var(--red-bg);color:var(--red);border-color:color-mix(in srgb,var(--red) 35%,transparent)}
+.msg.ok{background:var(--green-bg);color:var(--green);border-color:color-mix(in srgb,var(--green) 35%,transparent)}
+.msg.info{background:var(--accent-l);color:var(--accent2);border-color:color-mix(in srgb,var(--accent) 30%,transparent)}
+.msg .btn{margin-top:6px;padding:4px 10px;font-size:12px}
+
+/* progress */
+.bar{height:12px;background:var(--bg);border:1px solid var(--border);border-radius:999px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),#7c3aed);transition:width .25s}
+.pinfo{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:6px}
+.pinfo b{color:var(--text);font-size:16px}
+.steps{list-style:none;padding:0;margin:14px 0 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px}
+.steps li{font-size:12px;padding:6px 9px;border-radius:8px;border:1px solid var(--border);color:var(--faint);background:var(--bg)}
+.steps li::before{content:"○ "}
+.steps li.run{color:var(--accent2);border-color:var(--accent)}
+.steps li.run::before{content:"◐ "}
+.steps li.done{color:var(--green)}
+.steps li.done::before{content:"✓ "}
+.steps li.fail{color:var(--red);border-color:var(--red)}
+.steps li.fail::before{content:"✕ "}
+details{margin-top:10px}
+summary{cursor:pointer;font-size:12px;color:var(--muted)}
+pre.log{max-height:220px;overflow:auto;background:#0b1120;color:#cbd5e1;font:11px/1.45 var(--mono);padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-all}
+
+/* results */
+.cmp{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-bottom:14px}
+.cmp .side{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}
+.cmp .side span{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700}
+.cmp .side b{display:block;font-family:var(--mono);font-size:24px}
+.cmp .arrow{font-size:13px;font-weight:800;color:var(--green);text-align:center;font-family:var(--mono)}
+.res-table{width:100%;border-collapse:collapse;font-size:13px}
+.res-table td{padding:7px 4px;border-bottom:1px solid var(--border)}
+.res-table td:first-child{color:var(--muted)}
+.res-table td:last-child{text-align:right;font-family:var(--mono);font-weight:600;word-break:break-word}
+.privacy{font-size:12.5px;color:var(--muted)}
+.privacy ul{margin:6px 0 0;padding-left:18px}
+footer{margin-top:20px;font-size:12px;color:var(--faint);text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">▶</div>
+    <div>
+      <h1>Smart Video Compressor</h1>
+      <p>Any common format → MP4 (H.264 + AAC), sized the way you need it.</p>
+    </div>
+    <span class="badge" title="Processing happens in this browser tab">🔒 Runs locally — your video is never uploaded</span>
+  </header>
+
+  <div class="grid">
+    <!-- LEFT: input -->
+    <div class="stack">
+      <section class="card">
+        <h2>1 · Video</h2>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose or drop a video file">
+          <div class="big">🎬</div>
+          <b>Drag &amp; drop a video here</b>
+          <small>MP4 · MOV · AVI · MKV · WebM · WMV · FLV · MPEG/MPG · M4V · 3GP · TS · and other FFmpeg formats</small>
+          <div style="margin-top:12px"><span class="btn pri">Browse Files</span></div>
+        </div>
+        <input type="file" id="fileIn" accept="video/*,.mkv,.avi,.wmv,.flv,.ts,.mts,.m2ts,.mpg,.mpeg,.m4v,.3gp,.3g2,.mov,.webm,.vob,.ogv,.asf,.f4v,.mxf,.dv" hidden>
+        <div id="fileErr"></div>
+
+        <div class="fileinfo" id="fileInfo">
+          <div class="fname" id="fName"></div>
+          <div class="note" id="fSub"></div>
+          <video id="preview" controls muted playsinline></video>
+          <div class="note" id="previewNote"></div>
+          <div class="kv" id="metaKv"></div>
+          <div id="metaMsgs"></div>
+        </div>
+      </section>
+
+      <section class="card privacy">
+        <h2>Privacy</h2>
+        Your video is processed <b>inside this browser tab</b>.
+        <ul>
+          <li>The file is never uploaded; there is no server and no public URL.</li>
+          <li><b>Hardware engine</b> (MP4, MOV, MKV, WebM): uses the browser's built-in video encoder (WebCodecs) and your graphics chip — usually many times faster. Needs a small library (~0.3 MB) from jsDelivr.</li>
+          <li><b>FFmpeg engine</b> (all other formats, remux, sped-up audio): FFmpeg compiled to WebAssembly, downloaded once (~31 MB) from unpkg.com and only when needed. Multi-threaded when the page is served over HTTPS.</li>
+          <li>Everything is cleared from memory when you press Reset or close the tab.</li>
+        </ul>
+        <p style="margin:8px 0 0"><b>Limits:</b> browser memory caps practical inputs at about 1–2 GB. The FFmpeg engine is slower than native FFmpeg;
+          for it, the "Encoder speed" option trades compression efficiency for time.</p>
+      </section>
+    </div>
+
+    <!-- RIGHT: settings -->
+    <div class="stack">
+      <section class="card" id="settingsCard">
+        <h2>2 · Compression settings</h2>
+
+        <fieldset>
+          <legend>Output size</legend>
+          <div class="seg" id="sizeSeg">
+            <label><input type="radio" name="size" value="best"><span>Best Quality</span></label>
+            <label><input type="radio" name="size" value="20"><span>20 MB</span></label>
+            <label><input type="radio" name="size" value="30" checked><span>30 MB</span></label>
+            <label><input type="radio" name="size" value="40"><span>40 MB</span></label>
+            <label><input type="radio" name="size" value="50"><span>50 MB max</span></label>
+            <label><input type="radio" name="size" value="custom"><span>Custom</span></label>
+          </div>
+          <div class="row hide" id="customRow" style="margin-top:8px">
+            <input type="number" id="customMB" min="0.1" max="4000" step="0.1" value="25" style="width:110px"> <span class="note">MB (1 MB = 1,048,576 bytes)</span>
+          </div>
+          <label class="chk" id="onePassRow"><input type="checkbox" id="onePass" checked><span>Fast single pass (about 2× quicker; untick for two-pass, which lands closer to the size)</span></label>
+          <div class="note" style="margin-top:6px" id="sizeHint">If the result comes out over the target, it is re-encoded automatically at a lower bitrate.</div>
+        </fieldset>
+
+        <fieldset id="crfBox" class="hide">
+          <legend>Quality preset <span class="note">(CRF — lower = higher quality, larger file)</span></legend>
+          <div class="seg" id="presetSeg">
+            <label><input type="radio" name="preset" value="19"><span>High Quality · CRF 19</span></label>
+            <label><input type="radio" name="preset" value="23" checked><span>Balanced · CRF 23</span></label>
+            <label><input type="radio" name="preset" value="27"><span>Small File · CRF 27</span></label>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <input type="range" id="crf" min="18" max="28" step="1" value="23" style="flex:1">
+            <b id="crfVal" style="font-family:var(--mono);width:64px;text-align:right">CRF 23</b>
+          </div>
+        </fieldset>
+
+        <div class="two">
+          <fieldset>
+            <legend>Resolution</legend>
+            <select id="res" style="width:100%">
+              <option value="orig">Original (recommended)</option>
+              <option value="1080">1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+            </select>
+            <div class="note">Never upscales.</div>
+          </fieldset>
+          <fieldset>
+            <legend>Frame rate</legend>
+            <select id="fps" style="width:100%">
+              <option value="orig">Original (recommended)</option>
+              <option value="30">Reduce to 30 fps</option>
+              <option value="25">Reduce to 25 fps</option>
+              <option value="24">Reduce to 24 fps</option>
+            </select>
+            <div class="note">Only applied when lower than the source.</div>
+          </fieldset>
+          <fieldset>
+            <legend>Audio bitrate (AAC-LC)</legend>
+            <select id="abr" style="width:100%">
+              <option value="96">96 kbps</option>
+              <option value="128" selected>128 kbps (default)</option>
+              <option value="192">192 kbps</option>
+            </select>
+          </fieldset>
+          <fieldset>
+            <legend>Engine</legend>
+            <select id="engine" style="width:100%">
+              <option value="auto" selected>Auto — hardware when possible (recommended)</option>
+              <option value="webcodecs">Hardware (WebCodecs) only</option>
+              <option value="ffmpeg">FFmpeg (most compatible, slower)</option>
+            </select>
+            <div class="note" id="engineNote">Hardware needs Chrome, Edge or a recent Safari.</div>
+          </fieldset>
+          <fieldset>
+            <legend>Encoder speed (FFmpeg engine)</legend>
+            <select id="speed" style="width:100%">
+              <option value="ultrafast">Fastest (ultrafast)</option>
+              <option value="superfast" selected>Very fast (superfast) — default</option>
+              <option value="veryfast">Fast (veryfast) — slightly better compression</option>
+              <option value="faster">Medium-fast (faster)</option>
+              <option value="medium">Best compression (medium) — slow</option>
+            </select>
+          </fieldset>
+        </div>
+
+        <fieldset>
+          <legend>Fast forward <span class="note">(output plays faster and is shorter)</span></legend>
+          <select id="ffwd" style="width:100%">
+            <option value="1" selected>Normal speed (1×)</option>
+            <option value="1.5">1.5× faster</option>
+            <option value="2">2× faster</option>
+            <option value="4">4× faster</option>
+            <option value="8">8× faster</option>
+            <option value="16">16× faster</option>
+            <option value="32">32× faster</option>
+          </select>
+          <div class="note">Frames are dropped to keep the chosen frame rate; audio is sped up to match. Useful for long recordings such as CCTV.</div>
+        </fieldset>
+
+        <label class="chk"><input type="checkbox" id="copyAudio" checked><span>Keep the original audio untouched when it is already AAC at or below the chosen bitrate</span></label>
+        <label class="chk"><input type="checkbox" id="keepSubs" checked><span>Keep text subtitles (converted to MP4 mov_text)</span></label>
+        <label class="chk"><input type="checkbox" id="mute"><span>Mute video (remove all audio)</span></label>
+        <label class="chk" id="remuxRow"><input type="checkbox" id="remux"><span>Remux only — copy the H.264 stream into MP4 without re-encoding (no quality loss; size stays about the same)</span></label>
+
+        <div class="est" id="est"><span class="note">Choose a video to see the estimate.</span></div>
+        <div id="estMsgs"></div>
+
+        <div style="margin-top:14px">
+          <button class="btn pri big" id="startBtn" disabled>Compress to MP4</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <section class="card hide" id="progCard" style="margin-top:16px">
+    <h2>3 · Progress</h2>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="pinfo">
+      <span><b id="pPct">0%</b> <span id="pPhase">Starting…</span></span>
+      <span id="pEta"></span>
+    </div>
+    <ol class="steps" id="steps"></ol>
+    <div id="progMsgs"></div>
+    <div class="row" style="margin-top:12px"><button class="btn danger" id="cancelBtn">Cancel</button></div>
+    <details><summary>FFmpeg log</summary><pre class="log" id="log"></pre></details>
+  </section>
+
+  <!-- RESULTS -->
+  <section class="card hide" id="resCard" style="margin-top:16px">
+    <h2>4 · Result</h2>
+    <div class="cmp">
+      <div class="side"><span>Original</span><b id="rOrig">—</b></div>
+      <div class="arrow" id="rPct">→</div>
+      <div class="side"><span>Compressed MP4</span><b id="rNew">—</b></div>
+    </div>
+    <div id="resMsgs"></div>
+    <video id="resVideo" controls playsinline></video>
+    <table class="res-table" id="resTable" style="margin-top:12px"></table>
+    <div class="row" style="margin-top:14px">
+      <a class="btn pri" id="dlBtn" download>⬇ Download Compressed MP4</a>
+      <button class="btn" id="againBtn">Change settings &amp; compress again</button>
+      <button class="btn" id="anotherBtn">Compress another video</button>
+      <button class="btn danger" id="resetBtn">Reset</button>
+    </div>
+  </section>
+
+  <footer>WebCodecs via Mediabunny · FFmpeg (ffmpeg.wasm 0.12) · H.264 / yuv420p · AAC-LC · MP4 with fast-start. Re-encoding is lossy: quality is preserved as far as the chosen size allows, never "lossless".</footer>
+</div>
+
+<script type="module">
+/* ============================================================
+   Engine: ffmpeg.wasm (single-threaded core, no special headers)
+============================================================ */
+const FF_BASE   = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm';
+const CORE_BASE = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+const CORE_MT_BASE = 'https://unpkg.com/@ffmpeg/core-mt@0.12.10/dist/esm';
+/* the FFmpeg class served from this site (./ffmpeg/), so its worker is same-origin */
+const LOCAL_FF = new URL('./ffmpeg/index.js', import.meta.url).href;
+/* WebCodecs demux/encode/mux for the hardware engine */
+const MB_URL = 'https://cdn.jsdelivr.net/npm/mediabunny@1.61.6/dist/bundles/mediabunny.min.mjs';
+const FF_THREADS = Math.max(2, Math.min(8, navigator.hardwareConcurrency || 4));   /* core-mt has a 32-thread pool */
+
+const MB = 1024 * 1024;
+const HARD_MAX_MB = 50;           /* the "maximum output" the size presets respect */
+const SIZE_WARN = 1024 * MB;      /* above this, warn about browser memory */
+const SIZE_LIMIT = 2047 * MB;     /* WebAssembly 32-bit address space */
+const BPP_LOW = 0.05;             /* bits per pixel per frame: below → visible artefacts likely */
+const BPP_FLOOR = 0.03;           /* below → refuse, explain instead of degrading further */
+const MAX_RETRIES = 2;
+
+const EXT_OK = ['mp4','mov','avi','mkv','webm','wmv','flv','mpeg','mpg','m4v','3gp','3g2','ts','mts','m2ts','vob','ogv','asf','f4v','mxf','dv','divx','xvid','rm','rmvb'];
+const TEXT_SUBS = ['subrip','srt','ass','ssa','mov_text','webvtt','text'];
+
+const $ = id => document.getElementById(id);
+const fmtMB = b => b == null ? '—' : (b >= MB * 1000 ? (b / MB / 1024).toFixed(2) + ' GB' : (b / MB).toFixed(b < 10 * MB ? 2 : 1) + ' MB');
+const fmtDur = s => {
+  if (s == null || !isFinite(s)) return '—';
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = Math.floor(s % 60);
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(ss).padStart(2, '0');
+};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+const even = n => Math.max(2, Math.round(n / 2) * 2);
+
+let ff = null, ffLoading = null, ffThreads = false;
+let logSink = null;                  /* receives every FFmpeg log line while set */
+let file = null, meta = null, inPath = null, mounted = false;
+let inURL = null, outURL = null;
+let busy = false, cancelled = false;
+let mbMod = null, currentConv = null;   /* Mediabunny module, running hardware conversion */
+
+const mb = async () => mbMod || (mbMod = await import(MB_URL));
+
+async function blobURL(url, type) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Download failed (${r.status}): ${url}`);
+  return URL.createObjectURL(new Blob([await r.arrayBuffer()], { type }));
+}
+
+async function getFF() {
+  if (ff) return ff;
+  if (ffLoading) return ffLoading;
+  ffLoading = (async () => {
+    const onLog = inst => inst.on('log', ({ message }) => { if (logSink) logSink(message); });
+    /* Served over http(s) with the ./ffmpeg folder: same-origin worker, and the
+       multi-threaded core when the page is cross-origin isolated. */
+    let Local = null;
+    if (/^https?:$/.test(location.protocol)) { try { Local = (await import(LOCAL_FF)).FFmpeg; } catch { /* folder not deployed */ } }
+    if (Local && self.crossOriginIsolated) {
+      const inst = new Local(); onLog(inst);
+      try {
+        await inst.load({
+          coreURL: await blobURL(`${CORE_MT_BASE}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await blobURL(`${CORE_MT_BASE}/ffmpeg-core.wasm`, 'application/wasm'),
+          workerURL: await blobURL(`${CORE_MT_BASE}/ffmpeg-core.worker.js`, 'text/javascript')
+        });
+        ff = inst; ffThreads = true;
+        return inst;
+      } catch { try { inst.terminate(); } catch {} }   /* fall back to single-threaded below */
+    }
+    ffThreads = false;
+    const Cls = Local || (await import(`${FF_BASE}/index.js`)).FFmpeg;
+    const inst = new Cls(); onLog(inst);
+    /* Without the local folder the library would start its worker from the CDN,
+       which a browser refuses cross-origin. A tiny data: URL module that imports
+       the CDN worker works over http(s) and from file:// (which refuses blob: workers). */
+    await inst.load({
+      coreURL: `${CORE_BASE}/ffmpeg-core.js`,
+      wasmURL: `${CORE_BASE}/ffmpeg-core.wasm`,
+      ...(Local ? {} : { classWorkerURL: 'data:text/javascript;charset=utf-8,' + encodeURIComponent(`import "${FF_BASE}/worker.js";`) })
+    });
+    ff = inst;
+    return inst;
+  })();
+  try { return await ffLoading; } finally { ffLoading = null; }
+}
+
+/* Run FFmpeg with an argument array (never a shell string) and collect its log */
+async function run(args, onLine) {
+  const f = await getFF();
+  const lines = [];
+  logSink = line => { lines.push(line); appendLog(line); onLine && onLine(line); };
+  let code;
+  try { code = await f.exec(args); }
+  finally { logSink = null; }
+  return { code, log: lines.join('\n') };
+}
+
+/* ============================================================
+   Validation (extension, MIME, magic bytes)
+============================================================ */
+async function sniff(f) {
+  const b = new Uint8Array(await f.slice(0, 400).arrayBuffer());
+  const s = (o, n) => String.fromCharCode(...b.slice(o, o + n));
+  const hex = (o, n) => [...b.slice(o, o + n)].map(x => x.toString(16).padStart(2, '0')).join('');
+  if (s(4, 4) === 'ftyp') return 'ISO/QuickTime (MP4/MOV/M4V/3GP)';
+  if (['moov', 'mdat', 'wide', 'free', 'skip'].includes(s(4, 4))) return 'QuickTime (MOV)';
+  if (s(0, 4) === 'RIFF' && s(8, 4) === 'AVI ') return 'AVI';
+  if (hex(0, 4) === '1a45dfa3') return 'Matroska/WebM';
+  if (hex(0, 4) === '3026b275') return 'ASF (WMV)';
+  if (s(0, 3) === 'FLV') return 'FLV';
+  if (hex(0, 4) === '000001ba' || hex(0, 4) === '000001b3') return 'MPEG program stream';
+  if (b[0] === 0x47 && b[188] === 0x47) return 'MPEG transport stream';
+  if (b[4] === 0x47 && b[196] === 0x47) return 'MPEG transport stream (M2TS)';
+  if (s(0, 4) === 'OggS') return 'Ogg';
+  if (s(0, 4) === '.RMF') return 'RealMedia';
+  return null;
+}
+
+async function validate(f) {
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+  const issues = [];
+  if (f.size === 0) return { ok: false, error: 'This file is empty (0 bytes).' };
+  if (f.size > SIZE_LIMIT) return { ok: false, error: `This file is ${fmtMB(f.size)}. Browser processing is limited to about 2 GB; split or trim the video first.` };
+  const kind = await sniff(f);
+  const mimeOk = !f.type || f.type.startsWith('video/') || f.type === 'application/octet-stream' || f.type.startsWith('audio/') /* some MKV/TS report audio/ */;
+  if (!EXT_OK.includes(ext) && !kind) return { ok: false, error: `".${ext}" is not a recognised video format and its contents don't look like a video container.` };
+  if (!mimeOk) issues.push(`The browser reports this file as "${f.type}", not a video. FFmpeg will check the actual contents.`);
+  if (!kind) issues.push('Container not recognised from the file header; FFmpeg will try to read it anyway.');
+  if (f.size > SIZE_WARN) issues.push(`Large file (${fmtMB(f.size)}): processing in the browser needs a lot of memory and time.`);
+  return { ok: true, ext, kind, issues };
+}
+
+/* ============================================================
+   Metadata (FFmpeg's own stream report, parsed)
+============================================================ */
+function parseProbe(text) {
+  const m = {};
+  const d = /Duration: (\d+):(\d+):([\d.]+)/.exec(text);
+  m.duration = d ? (+d[1]) * 3600 + (+d[2]) * 60 + parseFloat(d[3]) : null;
+  const br = /Duration:.*?bitrate: (\d+) kb\/s/.exec(text);
+  m.bitrate = br ? +br[1] : null;
+  const ct = /Input #0, ([^\n]+?), from/.exec(text);
+  m.container = ct ? ct[1] : null;
+  m.video = []; m.audio = []; m.subs = [];
+  const lines = text.split('\n');
+  lines.forEach((ln, k) => {
+    const s = /Stream #0:(\d+)[^:]*: (Video|Audio|Subtitle): (.*)/.exec(ln);
+    if (!s) return;
+    const idx = +s[1], kind = s[2], rest = s[3];
+    const codec = rest.split(/[\s,]/)[0];
+    const kbps = /(\d+) kb\/s/.exec(rest);
+    if (kind === 'Video') {
+      if (/attached pic/.test(rest)) return;             /* cover art, not the video */
+      const r = /, (\d{2,5})x(\d{2,5})/.exec(rest);
+      const fps = /([\d.]+) fps/.exec(rest) || /([\d.]+)k? tbr/.exec(rest);
+      let rot = 0;
+      for (let j = k + 1; j < Math.min(lines.length, k + 12); j++) {
+        if (/Stream #/.test(lines[j])) break;
+        const a = /rotation of (-?[\d.]+) degrees/.exec(lines[j]) || /rotate\s*:\s*(-?\d+)/.exec(lines[j]);
+        if (a) { rot = Math.round(parseFloat(a[1])); break; }
+      }
+      const pix = /\b(yuv\w+|nv12|rgb\w*|bgr\w*|gray\w*)/.exec(rest);
+      m.video.push({ index: idx, codec, w: r ? +r[1] : null, h: r ? +r[2] : null, fps: fps ? parseFloat(fps[1]) : null,
+        kbps: kbps ? +kbps[1] : null, rot, pix: pix ? pix[1] : null, profile: (/\(([^)]+)\)/.exec(rest) || [])[1] || '' });
+    } else if (kind === 'Audio') {
+      const parts = rest.split(', ');
+      const hz = /(\d+) Hz/.exec(rest);
+      m.audio.push({ index: idx, codec, hz: hz ? +hz[1] : null, ch: parts[2] || '', kbps: kbps ? +kbps[1] : null });
+    } else {
+      m.subs.push({ index: idx, codec });
+    }
+  });
+  return m;
+}
+
+/* Same shape as parseProbe, read with Mediabunny (no FFmpeg download needed).
+   Stream indices are unknown here; the FFmpeg engine re-probes before it runs.
+   Dimensions are display dimensions, so rotation is already applied. */
+const MB_CODEC = { avc: 'h264', hevc: 'hevc', vp9: 'vp9', vp8: 'vp8', av1: 'av1', prores: 'prores' };
+const chLabel = n => n === 1 ? 'mono' : n === 2 ? 'stereo' : n === 6 ? '5.1' : n ? n + ' ch' : '';
+async function probeMB(blob) {
+  const M = await mb();
+  const input = new M.Input({ source: new M.BlobSource(blob), formats: M.ALL_FORMATS });
+  try {
+    const fmt = await input.getFormat();
+    const tracks = await input.getTracks();
+    const vt = await input.getPrimaryVideoTrack();
+    const m = { container: fmt.name, duration: await input.computeDuration(), bitrate: null,
+      video: [], audio: [], subs: [], engine: 'mb', mbOK: false, mbAudioOK: true };
+    if (vt) {
+      const st = await vt.computePacketStats(150).catch(() => null);
+      const codec = await vt.getCodec();
+      m.video.push({ index: null, codec: MB_CODEC[codec] || codec || 'unknown',
+        w: await vt.getDisplayWidth(), h: await vt.getDisplayHeight(),
+        fps: st && st.averagePacketRate ? Math.round(st.averagePacketRate * 1000) / 1000 : null,
+        kbps: st && st.averageBitrate ? Math.round(st.averageBitrate / 1000) : null, rot: 0, pix: null, profile: '' });
+      m.mbOK = await vt.canDecode();
+    }
+    for (const t of tracks.filter(t => t.type === 'audio')) {
+      const st = await t.computePacketStats(150).catch(() => null);
+      const n = await t.getNumberOfChannels();
+      m.audio.push({ index: null, codec: (await t.getCodec()) || 'unknown', hz: await t.getSampleRate(), ch: chLabel(n),
+        kbps: st && st.averageBitrate ? Math.round(st.averageBitrate / 1000) : null });
+      if (!(await t.canDecode())) m.mbAudioOK = false;
+    }
+    /* tx3g is MP4's text subtitle format, which FFmpeg calls mov_text */
+    m.subs = tracks.filter(t => t.type === 'subtitle').map(t => ({ index: null, codec: t.codec === 'tx3g' ? 'mov_text' : t.codec || 'subtitle' }));
+    return m;
+  } finally { input.dispose(); }
+}
+
+/* ============================================================
+   Settings → plan (bitrates, dims, warnings)
+============================================================ */
+function settings() {
+  const size = document.querySelector('input[name=size]:checked').value;
+  return {
+    size,
+    targetMB: size === 'best' ? null : size === 'custom' ? Math.max(0.1, +$('customMB').value || 0.1) : +size,
+    crf: +$('crf').value,
+    res: $('res').value,
+    fps: $('fps').value,
+    abr: +$('abr').value,
+    speed: $('speed').value,
+    engine: $('engine').value,
+    ffwd: +$('ffwd').value || 1,
+    onePass: $('onePass').checked,
+    copyAudio: $('copyAudio').checked,
+    keepSubs: $('keepSubs').checked,
+    mute: $('mute').checked,
+    remux: $('remux').checked && !$('remux').disabled && +$('ffwd').value === 1   /* speeding up needs a re-encode */
+  };
+}
+
+function plan(m, s, overrideVk) {
+  const v = m.video[0];
+  const p = { warnings: [], errors: [], infos: [] };
+  const sp = s.ffwd || 1;
+  p.speed = sp;
+  const rotated = Math.abs(v.rot) % 180 === 90;
+  const dispW = rotated ? v.h : v.w, dispH = rotated ? v.w : v.h;
+  p.srcW = dispW; p.srcH = dispH;
+  const short = Math.min(dispW, dispH);
+  const resN = s.res === 'orig' ? null : +s.res;
+  if (resN && resN < short) {
+    if (dispW >= dispH) { p.h = resN; p.w = even(dispW * resN / dispH); }
+    else { p.w = resN; p.h = even(dispH * resN / dispW); }
+    p.scaled = true;
+  } else {
+    p.w = even(dispW); p.h = even(dispH);
+    p.scaled = p.w !== dispW || p.h !== dispH;   /* odd sizes → nearest even, required by yuv420p */
+    if (resN && resN >= short) p.infos.push(`Source is ${short}p, so it is kept at its original resolution (no upscaling).`);
+  }
+  const srcFps = v.fps || 30;
+  const fpsN = s.fps === 'orig' ? null : +s.fps;
+  p.fps = fpsN && fpsN < srcFps - 0.5 ? fpsN : srcFps;
+  p.fpsChanged = p.fps !== srcFps;
+  if (fpsN && !p.fpsChanged) p.infos.push(`Source is already ${srcFps} fps; frame rate unchanged.`);
+
+  /* audio */
+  const a = m.audio[0];
+  p.hasAudio = !!a && !s.mute;
+  p.audioCopy = p.hasAudio && sp === 1 && s.copyAudio && m.audio.every(x => x.codec === 'aac') && a.kbps && a.kbps <= s.abr + 8;
+  p.audioKbps = !p.hasAudio ? 0 : p.audioCopy ? m.audio.reduce((t, x) => t + (x.kbps || s.abr), 0) : s.abr * m.audio.length;
+  if (!a) p.infos.push('The source has no audio track.');
+  if (a && s.mute) p.warnings.push('Audio will be removed because "Mute video" is selected.');
+  if (p.hasAudio && sp >= 4) p.infos.push(`At ${sp}× the sped-up audio will be hard to follow; consider "Mute video".`);
+
+  /* subtitles (their timing would no longer match a sped-up video) */
+  p.textSubs = s.keepSubs && sp === 1 ? m.subs.filter(x => TEXT_SUBS.includes(x.codec)) : [];
+  if (sp > 1 && s.keepSubs && m.subs.length) p.warnings.push('Subtitles are dropped when fast forward is on, because their timing would no longer match.');
+  const bitmap = m.subs.filter(x => !TEXT_SUBS.includes(x.codec));
+  if (bitmap.length) p.warnings.push(`${bitmap.length} image-based subtitle track(s) (${[...new Set(bitmap.map(x => x.codec))].join(', ')}) can't be stored in MP4 and will not be included.`);
+  if (m.subs.length && !s.keepSubs) p.warnings.push('Subtitles will be dropped because "Keep text subtitles" is off.');
+
+  /* remux eligibility */
+  p.remuxable = v.codec === 'h264' && (!v.pix || v.pix === 'yuv420p' || v.pix === 'yuvj420p') && m.audio.every(x => ['aac', 'mp3'].includes(x.codec));
+  p.remux = s.remux && p.remuxable;
+
+  const dur = m.duration ? m.duration / sp : null;   /* output duration */
+  p.outDur = dur;
+  p.mode = p.remux ? 'remux' : s.targetMB ? 'size' : 'crf';
+  p.targetBytes = s.targetMB ? s.targetMB * MB : null;
+
+  if (p.mode === 'size') {
+    if (!dur) { p.errors.push('The video duration could not be read, so a target size can\'t be calculated. Use "Best Quality" (CRF) instead.'); return p; }
+    const totalKbps = p.targetBytes * 8 / dur / 1000;
+    p.totalKbps = totalKbps;
+    /* 3 % container overhead; single pass aims lower so it rarely overshoots and needs a full re-encode
+       (hardware encoders overshoot by ~10-15 %, x264 by a few %) */
+    p.vk = overrideVk || Math.floor((totalKbps * 0.97 - p.audioKbps) * (s.hw ? 0.85 : s.onePass ? 0.95 : 1));
+    p.bpp = p.vk * 1000 / (p.w * p.h * p.fps);
+    if (p.vk < 80) {
+      p.errors.push(`${s.targetMB} MB is not enough for ${fmtDur(dur)} of video: after ${p.audioKbps} kbps audio only ${Math.max(0, p.vk)} kbps would be left for the picture. Choose a larger size${p.hasAudio ? ', lower audio bitrate,' : ''} or trim the video.`);
+    } else if (p.bpp < BPP_FLOOR) {
+      p.errors.push(`At ${p.w}×${p.h} ${p.fps} fps, ${p.vk} kbps is far too low (${p.bpp.toFixed(3)} bits/pixel) and the picture would break up badly.` + suggest(p, dur, m));
+    } else if (p.bpp < BPP_LOW) {
+      p.warnings.push(`${p.vk} kbps at ${p.w}×${p.h} is on the low side (${p.bpp.toFixed(3)} bits/pixel): expect some blockiness in motion or fine detail.` + suggest(p, dur, m));
+    }
+    if (p.hasAudio && s.abr === 192 && p.bpp < BPP_LOW && !p.audioCopy) p.warnings.push('The size is tight: switching audio to 128 or 96 kbps would give that space to the picture.');
+    if (file && file.size <= p.targetBytes) p.infos.push(`The original (${fmtMB(file.size)}) is already smaller than ${s.targetMB} MB. Consider "Best Quality"${p.remuxable ? ' or "Remux only"' : ''} instead of re-encoding to a larger bitrate.`);
+    if (s.targetMB > HARD_MAX_MB && s.size === 'custom') p.infos.push(`Custom target is above the ${HARD_MAX_MB} MB guideline.`);
+    if (v.kbps && p.vk < v.kbps * 0.15) {
+      const srcBpp = v.kbps * 1000 / (dispW * dispH * srcFps);
+      if (srcBpp > 0.2) p.warnings.push('The source is very detailed or noisy (high bitrate per pixel). Fast motion and grain compress poorly, so this target will lose more visible detail than for a calm video.');
+    }
+    p.estBytes = p.targetBytes;
+  } else if (p.mode === 'crf') {
+    /* rough: typical x264 bits/pixel at CRF 23 ≈ 0.10, ×2 every −6 CRF; content-dependent */
+    const bpp = 0.10 * Math.pow(2, (23 - s.crf) / 6);
+    let vk = bpp * p.w * p.h * p.fps / 1000;
+    if (v.kbps) vk = Math.min(vk, v.kbps * 1.1);
+    p.estVk = Math.round(vk);
+    p.estBytes = dur ? (vk + p.audioKbps) * 1000 * dur / 8 * 1.02 : null;
+  } else {
+    p.estBytes = file ? file.size : null;
+    if (p.textSubs.length === 0 && m.subs.length) p.infos.push('Remux keeps video and audio streams bit-for-bit.');
+  }
+  return p;
+}
+
+/* Lower resolution at which the bitrate reaches a comfortable bits/pixel */
+function suggest(p, dur, m) {
+  const opts = [1080, 720, 480, 360].filter(r => r < Math.min(p.srcW, p.srcH));
+  for (const r of opts) {
+    const area = p.srcW >= p.srcH ? (p.srcW * r / p.srcH) * r : r * (p.srcH * r / p.srcW);
+    if (p.vk * 1000 / (area * p.fps) >= 0.06) return ` Lowering the resolution to ${r}p would make this size workable, or choose a larger output size.`;
+  }
+  const need = Math.ceil((BPP_LOW * p.w * p.h * p.fps / 1000 + p.audioKbps) * dur / 8 / 1000 / 0.97 * 1000 / MB);
+  return ` A size of about ${need} MB would be needed at this resolution.`;
+}
+
+/* ============================================================
+   FFmpeg argument builders (arrays — no shell, no injection)
+============================================================ */
+function videoFilters(p) {
+  const f = [];
+  /* fast forward: compress the timestamps, then drop frames back to the output rate */
+  if (p.speed > 1) f.push(`setpts=PTS/${p.speed}`);
+  if (p.fpsChanged || p.speed > 1) f.push(`fps=${p.fps}`);
+  if (p.scaled) f.push(`scale=${p.w}:${p.h}:flags=bicubic`);
+  f.push('format=yuv420p');
+  return f.join(',');
+}
+
+/* atempo is chained in steps of at most 2× so any speed works on every FFmpeg build */
+function atempo(sp) {
+  const f = [];
+  let r = sp;
+  while (r > 2) { f.push('atempo=2.0'); r /= 2; }
+  f.push(`atempo=${+r.toFixed(4)}`);
+  return f.join(',');
+}
+
+function mapArgs(m, p, withAudio) {
+  const a = ['-map', `0:${m.video[0].index}`];
+  if (withAudio && p.hasAudio) m.audio.forEach(x => a.push('-map', `0:${x.index}`));
+  p.textSubs.forEach(x => a.push('-map', `0:${x.index}`));
+  return a;
+}
+
+function audioArgs(p) {
+  if (!p.hasAudio) return ['-an'];
+  return p.audioCopy ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', `${p.audioKbps / Math.max(1, meta.audio.length)}k`,
+    ...(p.speed > 1 ? ['-af', atempo(p.speed)] : [])];
+}
+
+function encodeArgs(m, p, s, pass) {
+  const common = ['-hide_banner', '-y', '-i', inPath, ...(ffThreads ? ['-threads', String(FF_THREADS)] : [])];
+  const v = ['-vf', videoFilters(p), '-c:v', 'libx264', '-preset', s.speed, '-profile:v', 'high', '-pix_fmt', 'yuv420p'];
+  if (p.mode === 'remux') {
+    const aCopy = m.audio.every(x => ['aac', 'mp3'].includes(x.codec));
+    return [...common, ...mapArgs(m, p, true), '-c:v', 'copy',
+      ...(p.hasAudio ? (aCopy ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', `${s.abr}k`]) : ['-an']),
+      ...(p.textSubs.length ? ['-c:s', 'mov_text'] : []),
+      '-map_metadata', '0', '-movflags', '+faststart', '/out.mp4'];
+  }
+  if (p.mode === 'crf') {
+    return [...common, ...mapArgs(m, p, true), ...v, '-crf', String(s.crf), ...audioArgs(p),
+      ...(p.textSubs.length ? ['-c:s', 'mov_text'] : []),
+      '-map_metadata', '0', '-movflags', '+faststart', '/out.mp4'];
+  }
+  /* pass 0 = single-pass average bitrate; passes 1 and 2 = classic two-pass */
+  const rate = ['-b:v', `${p.vk}k`, '-maxrate', `${Math.round(p.vk * 1.5)}k`, '-bufsize', `${p.vk * 2}k`];
+  const twoPass = n => ['-passlogfile', '/x264pass', '-pass', String(n)];
+  if (pass === 1) return [...common, '-map', `0:${m.video[0].index}`, ...v, ...rate, ...twoPass(1), '-an', '-sn', '-f', 'null', '-'];
+  return [...common, ...mapArgs(m, p, true), ...v, ...rate, ...(pass === 2 ? twoPass(2) : []), ...audioArgs(p),
+    ...(p.textSubs.length ? ['-c:s', 'mov_text'] : []),
+    '-map_metadata', '0', '-movflags', '+faststart', '/out.mp4'];
+}
+
+/* ============================================================
+   Engines: hardware (WebCodecs via Mediabunny) or FFmpeg
+============================================================ */
+/* Which engine to use for this plan, and why when it isn't the hardware one */
+async function pickEngine(p, s) {
+  const no = why => ({ engine: 'ffmpeg', why });
+  if (s.engine === 'ffmpeg') return no('');
+  if (p.mode === 'remux') return no('Remux copies streams with FFmpeg.');
+  if (s.engine === 'auto' && p.textSubs.length) return no('Subtitles are kept with the FFmpeg engine.');
+  /* at 4× and above sped-up audio is unintelligible, so the hardware engine drops it instead */
+  if (s.engine === 'auto' && p.hasAudio && p.speed > 1 && p.speed < 4) return no('Sped-up audio needs the FFmpeg engine (tick "Mute video" to use the faster hardware engine).');
+  if (typeof VideoEncoder === 'undefined') return no('This browser has no hardware video encoder (WebCodecs); use Chrome, Edge or a recent Safari.');
+  if (!meta.mbOK) return no('The browser can\'t decode this format itself.');
+  try {
+    const M = await mb();
+    if (!(await M.canEncodeVideo('avc', { width: p.w, height: p.h, frameRate: p.fps }))) return no(`The browser can't encode H.264 at ${p.w}×${p.h}.`);
+    if (p.hasAudio && p.speed === 1 && !p.audioCopy && !(meta.mbAudioOK && await M.canEncodeAudio('aac', { bitrate: s.abr * 1000 })))
+      return no('The browser can\'t encode AAC audio for this file.');
+  } catch (e) { return no('The hardware engine could not start: ' + (e.message || e)); }
+  return { engine: 'webcodecs', why: '' };
+}
+
+/* The hardware path: decode, resize, re-time and encode with WebCodecs */
+async function encodeFast(p, s, onProgress) {
+  const M = await mb();
+  const input = new M.Input({ source: new M.BlobSource(file), formats: M.ALL_FORMATS });
+  const output = new M.Output({ format: new M.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new M.BufferTarget() });
+  const quality = p.mode === 'size'
+    ? new M.Quality({ bitrate: p.vk * 1000 })
+    : new M.Quality({ quantizer: s.crf, bitrate: Math.max(300, p.estVk || 1500) * 1000 });   /* bitrate is the fallback where QP isn't supported */
+  const video = { codec: 'avc', quality, keyFrameInterval: 2, forceTranscode: true };
+  if (p.scaled) Object.assign(video, { width: p.w, height: p.h, fit: 'fill' });
+  /* fast forward: keep 1 of every N source frames (frame rate in source time), then compress the timestamps */
+  if (p.fpsChanged || p.speed > 1) video.frameRate = p.fps / p.speed;
+  if (p.speed > 1) video.process = smp => { smp.setTimestamp(smp.timestamp / p.speed); smp.setDuration(smp.duration / p.speed); return smp; };
+  const audio = !p.hasAudio ? { discard: true }
+    : p.audioCopy ? {} : { codec: 'aac', quality: new M.Quality({ bitrate: s.abr * 1000 }), forceTranscode: true };
+  try {
+    const conv = await M.Conversion.init({ input, output, tracks: 'primary', video, audio, showWarnings: false });
+    if (!conv.isValid) throw new Error('the hardware engine can\'t convert this file (' +
+      conv.discardedTracks.map(d => `${d.track.type}: ${d.reason.replace(/_/g, ' ')}`).join('; ') + ')');
+    conv.onProgress = f => onProgress(f);
+    currentConv = conv;
+    await conv.execute();
+    return new Uint8Array(output.target.buffer);
+  } finally {
+    currentConv = null;
+    input.dispose();
+  }
+}
+
+/* The FFmpeg engine needs the engine loaded, the input mounted and FFmpeg's own stream indices */
+async function ffMeta() {
+  await getFF();
+  if (!inPath) await mountInput(file, (file.name.split('.').pop() || '').toLowerCase());
+  if (meta.engine === 'ff') return;
+  const { log } = await run(['-hide_banner', '-i', inPath]);
+  const m = parseProbe(log);
+  if (!m.video.length || !m.video[0].w) throw new Error('FFmpeg could not read the video stream of this file.');
+  if (!m.duration) m.duration = meta.duration;
+  meta = { ...m, engine: 'ff', mbOK: meta.mbOK, mbAudioOK: meta.mbAudioOK };
+}
+
+/* ============================================================
+   UI: file selection
+============================================================ */
+const drop = $('drop'), fileIn = $('fileIn');
+drop.addEventListener('click', () => !busy && fileIn.click());
+drop.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && !busy) { e.preventDefault(); fileIn.click(); } });
+['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f && !busy) handleFile(f); });
+fileIn.addEventListener('change', () => { const f = fileIn.files[0]; if (f && !busy) handleFile(f); fileIn.value = ''; });
+
+function msg(el, kind, html) { $(el).insertAdjacentHTML('beforeend', `<div class="msg ${kind}">${html}</div>`); }
+function clearMsgs(...ids) { ids.forEach(id => $(id).innerHTML = ''); }
+
+async function handleFile(f) {
+  await clearSession();
+  clearMsgs('fileErr', 'metaMsgs', 'estMsgs');
+  $('resCard').classList.add('hide');
+  $('progCard').classList.add('hide');
+  const val = await validate(f);
+  if (!val.ok) { msg('fileErr', 'err', esc(val.error)); return; }
+  file = f;
+  $('fileInfo').style.display = 'block';
+  $('fName').textContent = f.name;
+  $('fSub').textContent = `${(val.ext || '?').toUpperCase()} · ${fmtMB(f.size)}${val.kind ? ' · ' + val.kind : ''}`;
+  val.issues.forEach(t => msg('metaMsgs', 'warn', esc(t)));
+
+  inURL = URL.createObjectURL(f);
+  const pv = $('preview');
+  $('previewNote').textContent = '';
+  pv.onerror = () => { $('previewNote').textContent = 'This browser can\'t preview this format (common for MKV, AVI, WMV, FLV). Compression still works — the MP4 result will play here.'; };
+  pv.onloadedmetadata = () => { if (meta && !meta.duration && isFinite(pv.duration)) { meta.duration = pv.duration; renderMeta(); refresh(); } };
+  pv.src = inURL;
+
+  $('metaKv').innerHTML = '<div><span>Status</span><b>Reading metadata…</b></div>';
+  $('startBtn').disabled = true;
+  try {
+    /* Mediabunny reads MP4/MOV/MKV/WebM/TS without the 31 MB FFmpeg download */
+    let m = null;
+    try { m = await probeMB(f); if (!m.video.length || !m.video[0].w || !m.duration) m = null; } catch { m = null; }
+    if (f !== file) return;   /* another file was chosen meanwhile */
+    if (!m) {
+      $('metaKv').innerHTML = '<div><span>Status</span><b>Loading FFmpeg engine…</b></div>';
+      await getFF();
+      $('metaKv').innerHTML = '<div><span>Status</span><b>Reading metadata…</b></div>';
+      await mountInput(f, val.ext);
+      const { log } = await run(['-hide_banner', '-i', inPath]);
+      if (/Invalid data found|could not find codec parameters|moov atom not found|EBML header parsing failed|End of file/i.test(log) && !/Stream #0/.test(log)) {
+        throw new Error('FFmpeg could not read this file. It is either corrupted, incomplete (e.g. an interrupted recording) or not a supported video format.');
+      }
+      m = { ...parseProbe(log), engine: 'ff', mbOK: false, mbAudioOK: false };
+    }
+    if (!m.video.length) throw new Error(m.audio.length ? 'This file contains only audio — there is no video stream to compress.' : 'No video stream was found. The file may be corrupted or in an unsupported format.');
+    if (!m.video[0].w) throw new Error('The video stream\'s resolution could not be read; the file may be damaged.');
+    if (!m.duration && isFinite(pv.duration) && pv.duration > 0) m.duration = pv.duration;
+    meta = m;
+    renderMeta();
+    applyDefaults();
+    refresh();
+  } catch (e) {
+    $('metaKv').innerHTML = '';
+    msg('metaMsgs', 'err', esc(e.message || String(e)) + (/fetch|import|network|Failed to load/i.test(String(e)) ? '<br>Check the internet connection: the FFmpeg engine is downloaded from unpkg.com the first time.' : ''));
+  }
+}
+
+async function mountInput(f, ext) {
+  const safe = new File([f], `input.${(ext || 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'bin'}`, { type: f.type });
+  try {
+    await ff.createDir('/in').catch(() => {});
+    await ff.mount('WORKERFS', { files: [safe] }, '/in');      /* reads on demand — no full copy in memory */
+    mounted = true;
+    inPath = `/in/${safe.name}`;
+  } catch {
+    mounted = false;
+    inPath = `/${safe.name}`;
+    await ff.writeFile(inPath, new Uint8Array(await f.arrayBuffer()));
+  }
+}
+
+function renderMeta() {
+  const m = meta, v = m.video[0], a = m.audio[0];
+  const rotated = Math.abs(v.rot) % 180 === 90;
+  const res = rotated ? `${v.h}×${v.w}` : `${v.w}×${v.h}`;
+  const cells = [
+    ['Container', (m.container || '—').split(',')[0]],
+    ['Duration', fmtDur(m.duration)],
+    ['File size', fmtMB(file.size)],
+    ['Resolution', res + (v.rot ? ` (rotated ${v.rot}°)` : '')],
+    ['Frame rate', v.fps ? `${+v.fps.toFixed(3)} fps` : '—'],
+    ['Video codec', `${v.codec}${v.profile && !/^0x/.test(v.profile) ? ' · ' + v.profile.split(' ')[0] : ''}`],
+    ['Video bitrate', v.kbps ? `${v.kbps} kbps` : m.bitrate ? `~${m.bitrate} kbps total` : '—'],
+    ['Audio', a ? `${a.codec} · ${a.ch || '?'}${a.kbps ? ' · ' + a.kbps + ' kbps' : ''}${m.audio.length > 1 ? ` (+${m.audio.length - 1} more)` : ''}` : 'None'],
+    ['Subtitles', m.subs.length ? m.subs.map(s => s.codec).join(', ') : 'None']
+  ];
+  $('metaKv').innerHTML = cells.map(([k, val]) => `<div><span>${k}</span><b>${esc(val)}</b></div>`).join('');
+}
+
+function applyDefaults() {
+  /* small originals: default to quality mode rather than inflating to 30 MB */
+  if (file.size <= 30 * MB) document.querySelector('input[name=size][value=best]').checked = true;
+  const p = plan(meta, settings());
+  $('remux').disabled = !p.remuxable;
+  $('remuxRow').style.opacity = p.remuxable ? 1 : .5;
+  $('remuxRow').title = p.remuxable ? '' : 'Only available when the source video is H.264 (4:2:0) with AAC/MP3 audio';
+  if (!p.remuxable) $('remux').checked = false;
+}
+
+/* ============================================================
+   UI: settings & estimate
+============================================================ */
+document.querySelectorAll('input[name=size]').forEach(r => r.addEventListener('change', refresh));
+document.querySelectorAll('input[name=preset]').forEach(r => r.addEventListener('change', () => { $('crf').value = r.value; refresh(); }));
+$('crf').addEventListener('input', () => {
+  document.querySelectorAll('input[name=preset]').forEach(r => r.checked = r.value === $('crf').value);
+  refresh();
+});
+['customMB', 'res', 'fps', 'abr', 'speed', 'engine', 'ffwd', 'onePass', 'copyAudio', 'keepSubs', 'mute', 'remux'].forEach(id => $(id).addEventListener(id === 'customMB' ? 'input' : 'change', refresh));
+
+function refresh() {
+  const s = settings();
+  $('customRow').classList.toggle('hide', s.size !== 'custom');
+  $('onePassRow').classList.toggle('hide', s.size === 'best' || s.remux);
+  $('sizeHint').classList.toggle('hide', s.size === 'best' || s.remux);
+  $('crfBox').classList.toggle('hide', s.size !== 'best' || s.remux);
+  $('crfVal').textContent = `CRF ${s.crf}`;
+  clearMsgs('estMsgs');
+  if (!meta) { $('startBtn').disabled = true; return; }
+  const p = plan(meta, s);
+  const v = meta.video[0];
+  const rows = [
+    ['Mode', p.mode === 'remux' ? 'Remux (no re-encode)' : p.mode === 'size' ? `${s.onePass ? 'Single pass' : 'Two-pass'} to ${s.targetMB} MB` : `Quality, CRF ${s.crf}`],
+    ['Output resolution', p.mode === 'remux' ? `${p.srcW}×${p.srcH} (unchanged)` : `${p.w}×${p.h}${p.scaled ? '' : ' (original)'}`],
+    ['Frame rate', p.mode === 'remux' ? `${v.fps || '?'} fps` : `${+p.fps.toFixed(3)} fps${p.fpsChanged ? ' (reduced)' : ''}`]
+  ];
+  if (p.speed > 1) rows.push(['Fast forward', `${p.speed}× · ${fmtDur(meta.duration)} → ${fmtDur(p.outDur)}`]);
+  const hw = s.engine !== 'ffmpeg' && p.mode !== 'remux' && meta.mbOK && typeof VideoEncoder !== 'undefined'
+    && !(s.engine === 'auto' && (p.textSubs.length || (p.hasAudio && p.speed > 1 && p.speed < 4)));
+  rows.push(['Engine', hw ? 'Hardware (WebCodecs) — fast' : 'FFmpeg' + (self.crossOriginIsolated ? ' (multi-threaded)' : '')]);
+  if (p.mode === 'size' && p.vk) rows.push(['Video bitrate', `${p.vk} kbps`], ['Bits per pixel', p.bpp.toFixed(3)]);
+  if (p.mode === 'crf' && p.estVk) rows.push(['Typical video bitrate', `~${p.estVk} kbps`]);
+  rows.push(['Audio', !meta.audio.length ? 'none in source' : !p.hasAudio ? 'removed (muted)' : p.mode === 'remux' ? 'copied' : p.audioCopy ? `copied (AAC ${p.audioKbps} kbps)` : `AAC ${s.abr} kbps`]);
+  rows.push(['Estimated output', p.estBytes ? (p.mode === 'crf' ? '≈ ' + fmtMB(p.estBytes) + ' (rough — depends on content)' : (p.mode === 'size' ? '≤ ' : '≈ ') + fmtMB(p.estBytes)) : '—']);
+  $('est').innerHTML = `<table>${rows.map(([k, val]) => `<tr><td>${k}</td><td>${esc(val)}</td></tr>`).join('')}</table>`;
+  p.errors.forEach(t => msg('estMsgs', 'err', esc(t)));
+  p.warnings.forEach(t => msg('estMsgs', 'warn', esc(t)));
+  p.infos.forEach(t => msg('estMsgs', 'info', esc(t)));
+  if ($('remux').checked && s.ffwd > 1) msg('estMsgs', 'info', '"Remux only" is ignored with fast forward: changing the speed needs a re-encode.');
+  if (p.mode === 'crf' && p.estBytes > HARD_MAX_MB * MB) msg('estMsgs', 'info', `Quality mode may produce more than ${HARD_MAX_MB} MB for this video. If it does, you'll be offered a two-pass fit to ${HARD_MAX_MB} MB.`);
+  if (meta.video[0].w * meta.video[0].h > 1920 * 1080 && p.mode !== 'remux' && !p.scaled) msg('estMsgs', 'info', 'Encoding above 1080p in the browser is slow. 1080p output is usually a good trade-off.');
+  $('startBtn').disabled = busy || p.errors.length > 0;
+}
+
+/* ============================================================
+   Progress & steps
+============================================================ */
+const STEP_NAMES = ['Validate file', 'Read metadata', 'Calculate bitrate', 'Check feasibility', 'Compress', 'Verify MP4', 'Ready'];
+function initSteps() {
+  $('steps').innerHTML = STEP_NAMES.map((n, i) => `<li id="st${i}">${n}</li>`).join('');
+}
+function step(i, state, label) {
+  const el = $('st' + i); if (!el) return;
+  el.className = state;
+  if (label) el.textContent = label;
+}
+let progStart = 0;
+function setProgress(frac, phase) {
+  const pct = Math.max(0, Math.min(100, frac * 100));
+  $('barFill').style.width = pct.toFixed(1) + '%';
+  $('pPct').textContent = Math.floor(pct) + '%';
+  if (phase) $('pPhase').textContent = phase;
+  const el = (performance.now() - progStart) / 1000;
+  if (frac > 0.02 && frac < 1) {
+    const rem = el / frac - el;
+    $('pEta').textContent = `Elapsed ${fmtDur(el)} · about ${fmtDur(rem)} left`;
+  } else $('pEta').textContent = frac >= 1 ? `Took ${fmtDur(el)}` : `Elapsed ${fmtDur(el)}`;
+}
+function appendLog(line) {
+  const el = $('log');
+  if (el.textContent.length > 200000) el.textContent = el.textContent.slice(-100000);
+  el.textContent += line + '\n';
+}
+const timeOf = line => { const t = /time=\s*(\d+):(\d+):([\d.]+)/.exec(line); return t ? (+t[1]) * 3600 + (+t[2]) * 60 + parseFloat(t[3]) : null; };
+
+/* ============================================================
+   Compression workflow
+============================================================ */
+$('startBtn').addEventListener('click', () => compress());
+$('cancelBtn').addEventListener('click', cancel);
+
+async function compress(forced) {
+  if (busy || !meta) return;
+  const asked = forced ? { ...settings(), ...forced } : settings();
+  let s = asked;
+  busy = true; cancelled = false;
+  $('startBtn').disabled = true;
+  $('resCard').classList.add('hide');
+  $('progCard').classList.remove('hide');
+  $('cancelBtn').disabled = false;
+  $('log').textContent = '';
+  clearMsgs('progMsgs', 'resMsgs');
+  initSteps();
+  progStart = performance.now();
+  setProgress(0, 'Preparing…');
+  $('progCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  const t0 = performance.now();
+  try {
+    step(0, 'done'); step(1, 'done');
+    step(2, 'run');
+    let p = plan(meta, s);
+    step(2, 'done');
+    step(3, 'run');
+    if (p.errors.length) { step(3, 'fail'); throw new Error(p.errors.join(' ')); }
+    step(3, 'done', p.warnings.length ? 'Check feasibility (warnings)' : 'Check feasibility');
+
+    /* engine: hardware when it can, FFmpeg otherwise (and as automatic fallback) */
+    setProgress(0, 'Choosing engine…');
+    let { engine, why } = await pickEngine(p, s);
+    if (s.engine === 'webcodecs' && engine !== 'webcodecs') msg('progMsgs', 'warn', esc(`Hardware engine not available: ${why} Using FFmpeg instead.`));
+    else if (why && s.engine === 'auto') msg('progMsgs', 'info', esc(`Using the FFmpeg engine: ${why}`));
+    const useFFmpeg = async () => {
+      engine = 'ffmpeg'; s = asked;
+      setProgress(0, ff ? 'Preparing FFmpeg…' : 'Downloading FFmpeg engine (~31 MB, once)…');
+      await ffMeta();
+      if (cancelled) throw new Error('Cancelled.');   /* Cancel pressed during the download */
+      p = plan(meta, s);
+      if (p.errors.length) throw new Error(p.errors.join(' '));
+    };
+    if (engine === 'webcodecs') {
+      /* one pass by nature; audio is dropped when fast forwarding, subtitles aren't carried */
+      if (p.hasAudio && p.speed > 1) msg('progMsgs', 'info', `Audio is removed at ${p.speed}× (sped-up audio is unintelligible). Choose the FFmpeg engine to keep it.`);
+      if (p.textSubs.length) msg('progMsgs', 'info', 'The hardware engine does not carry subtitles; they are left out.');
+      s = { ...asked, onePass: true, hw: true, mute: asked.mute || p.speed > 1, keepSubs: false };
+      p = plan(meta, s);
+    } else await useFFmpeg();
+
+    let out = null, attempt = 0;
+    while (true) {
+      if (cancelled) throw new Error('Cancelled.');
+      if (engine === 'webcodecs') {
+        step(4, 'run', `Compress (hardware${attempt ? ', retry ' + attempt : ''})`);
+        const label = 'Encoding with hardware (WebCodecs)';
+        setProgress(0, label);
+        try {
+          out = await encodeFast(p, s, f => setProgress(f, label));
+        } catch (e) {
+          if (cancelled) throw new Error('Cancelled.');
+          if (asked.engine === 'webcodecs') throw new Error('Hardware encoding failed: ' + (e.message || e));
+          msg('progMsgs', 'warn', esc(`Hardware encoding failed (${e.message || e}). Continuing with FFmpeg.`));
+          await useFFmpeg();
+          attempt = 0;
+          continue;
+        }
+        if (cancelled) throw new Error('Cancelled.');
+      } else {
+        const dur = p.outDur || 0;   /* FFmpeg reports progress in output time */
+        await ff.deleteFile('/out.mp4').catch(() => {});
+        step(4, 'run', p.mode === 'size' ? `Compress (FFmpeg ${s.onePass ? 'single pass' : 'two-pass'}${attempt ? ', retry ' + attempt : ''})` : p.mode === 'remux' ? 'Remux' : 'Compress (FFmpeg)');
+        const passes = p.mode === 'size' && !s.onePass ? [1, 2] : [0];
+        const thr = ffThreads ? ` · ${FF_THREADS} threads` : '';
+        for (let k = 0; k < passes.length; k++) {
+          const pass = passes[k];
+          const base = k / passes.length, span = 1 / passes.length;
+          const label = (pass === 1 ? 'Pass 1 of 2 — analysing' : pass === 2 ? 'Pass 2 of 2 — encoding' : p.mode === 'remux' ? 'Remuxing' : 'Encoding') + thr;
+          setProgress(base, label);
+          const { code, log } = await run(encodeArgs(meta, p, s, pass), line => {
+            const t = timeOf(line);
+            if (t != null && dur) setProgress(base + span * Math.min(1, t / dur), label);
+          });
+          if (cancelled) throw new Error('Cancelled.');
+          if (code !== 0) throw new Error(explainFailure(log));
+        }
+        out = await ff.readFile('/out.mp4');
+      }
+      if (p.mode !== 'size') break;
+      /* Over the limit? Retry with a proportionally lower bitrate, within reason */
+      const limit = Math.min(p.targetBytes * 1.02, s.targetMB <= HARD_MAX_MB ? HARD_MAX_MB * MB : Infinity);
+      if (out.byteLength <= limit) break;
+      if (attempt >= MAX_RETRIES) { msg('progMsgs', 'warn', `After ${MAX_RETRIES} retries the file is ${fmtMB(out.byteLength)}, slightly above the target. Stopping here instead of re-encoding again.`); break; }
+      const vk = Math.floor(p.vk * (p.targetBytes * 0.97 / out.byteLength) - 8);
+      const np = plan(meta, s, vk);
+      if (np.bpp < BPP_FLOOR) { msg('progMsgs', 'warn', `The result (${fmtMB(out.byteLength)}) is above the target, but lowering the bitrate further would push quality below an acceptable level. Keeping this result; choose a larger size or lower resolution if it must be smaller.`); break; }
+      attempt++;
+      msg('progMsgs', 'info', `Result was ${fmtMB(out.byteLength)} — above the ${s.targetMB} MB target. Retrying at ${vk} kbps (attempt ${attempt} of ${MAX_RETRIES}).`);
+      p = np;
+    }
+    step(4, 'done');
+
+    step(5, 'run');
+    setProgress(1, 'Verifying output…');
+    p.engine = engine;
+    const check = await verify(out, p);
+    step(5, check.ok ? 'done' : 'fail');
+    step(6, 'done');
+    const secs = (performance.now() - t0) / 1000;
+    $('cancelBtn').disabled = true;
+    showResult(out, p, s, check, secs);
+  } catch (e) {
+    const m = e.message || String(e);
+    msg('progMsgs', cancelled ? 'info' : 'err', esc(m));
+    const running = [...document.querySelectorAll('.steps li.run')];
+    running.forEach(li => li.className = 'fail');
+    $('pPhase').textContent = cancelled ? 'Cancelled' : 'Failed';
+    $('cancelBtn').disabled = true;
+  } finally {
+    busy = false;
+    await ff?.deleteFile('/x264pass-0.log').catch(() => {});
+    await ff?.deleteFile('/x264pass-0.log.mbtree').catch(() => {});
+    refresh();
+  }
+}
+
+function explainFailure(log) {
+  const tail = log.split('\n').slice(-6).join(' ');
+  /* note: ffmpeg.wasm prints "Aborted()" after every run, so it is not a signal by itself */
+  if (/Cannot allocate memory|out of memory|\bOOM\b|memory access out of bounds/i.test(log)) return 'The browser ran out of memory while encoding. Try a lower output resolution, a shorter clip, or a desktop browser with more free memory.';
+  if (/No space left/i.test(log)) return 'There is not enough storage space in the browser to write the output.';
+  if (/Invalid data found|corrupt|error while decoding/i.test(log)) return 'FFmpeg hit damaged data in the input and could not continue. The file may be corrupted. Details: ' + tail;
+  if (/Unknown encoder|Encoder not found/i.test(log)) return 'A required encoder is missing from this FFmpeg build. Details: ' + tail;
+  return 'FFmpeg could not process this video. Details: ' + tail;
+}
+
+/* Read the result back (Mediabunny, else FFmpeg) and in a <video> element */
+async function verify(out, p) {
+  const r = { ok: true, items: [] };
+  let m;
+  try { m = await probeMB(new Blob([out], { type: 'video/mp4' })); }
+  catch {
+    m = p.engine === 'ffmpeg' ? parseProbe((await run(['-hide_banner', '-i', '/out.mp4'])).log)
+      : { video: [], audio: [], subs: [], duration: null };
+  }
+  const v = m.video[0], a = m.audio[0];
+  const add = (ok, text) => { r.items.push({ ok, text }); if (!ok) r.ok = false; };
+  add(!!v && v.codec === 'h264', v ? `Video stream: ${v.codec} ${v.w}×${v.h}${v.fps ? ' @ ' + v.fps + ' fps' : ''}` : 'Video stream missing');
+  if (p.hasAudio) add(!!a && (a.codec === 'aac' || (p.mode === 'remux' && a.codec === 'mp3')), a ? `Audio stream: ${a.codec} ${a.ch}${a.kbps ? ', ' + a.kbps + ' kbps' : ''}` : 'Audio stream missing');
+  else add(!a, a ? 'Unexpected audio stream' : 'No audio (as expected)');
+  const want = p.outDur || meta.duration;
+  if (want && m.duration) add(Math.abs(m.duration - want) <= Math.max(1, want * 0.02),
+    `Duration ${fmtDur(m.duration)} (${p.speed > 1 ? `expected ${fmtDur(want)} at ${p.speed}×, source ${fmtDur(meta.duration)}` : 'source ' + fmtDur(meta.duration)})`);
+  if (p.textSubs.length) add(m.subs.length >= p.textSubs.length, `${m.subs.length} subtitle track(s)`);
+  r.meta = m;
+  /* playable? */
+  const blob = new Blob([out], { type: 'video/mp4' });
+  if (outURL) URL.revokeObjectURL(outURL);
+  outURL = URL.createObjectURL(blob);
+  const playable = await new Promise(res => {
+    const t = document.createElement('video');
+    const done = ok => { clearTimeout(to); t.removeAttribute('src'); t.load(); res(ok); };
+    const to = setTimeout(() => done(false), 15000);
+    t.preload = 'metadata'; t.muted = true;
+    t.onloadedmetadata = () => done(true);
+    t.onerror = () => done(false);
+    t.src = outURL;
+  });
+  add(playable, playable ? 'Plays in this browser' : 'This browser could not open the result for playback');
+  r.blob = blob;
+  return r;
+}
+
+function showResult(out, p, s, check, secs) {
+  const orig = file.size, size = out.byteLength;
+  const red = (orig - size) / orig * 100;
+  $('rOrig').textContent = fmtMB(orig);
+  $('rNew').textContent = fmtMB(size);
+  $('rPct').textContent = red >= 0 ? `−${red.toFixed(1)}%` : `+${(-red).toFixed(1)}%`;
+  $('rPct').style.color = red >= 0 ? 'var(--green)' : 'var(--amber)';
+  const v = meta.video[0], ov = check.meta.video[0] || {}, oa = check.meta.audio[0];
+  const audioStatus = !meta.audio.length ? 'No audio in source'
+    : !p.hasAudio ? (p.engine === 'webcodecs' && p.speed > 1 && !settings().mute ? `Removed (${p.speed}× fast forward)` : 'Removed (muted by request)')
+    : (p.mode === 'remux' || p.audioCopy) ? `Original audio kept (${oa ? oa.codec + ' ' + (oa.kbps || '') + ' kbps' : 'copied'})`
+    : `Re-encoded to AAC-LC ${s.abr} kbps${oa?.ch ? ', ' + oa.ch : ''}`;
+  const rows = [
+    ['Original file size', fmtMB(orig)],
+    ['Target file size', p.mode === 'size' ? `${s.targetMB} MB` : p.mode === 'remux' ? '— (remux)' : `— (CRF ${s.crf})`],
+    ['Final file size', `${fmtMB(size)} (${size.toLocaleString()} bytes)`],
+    ['Original resolution', `${p.srcW}×${p.srcH} @ ${v.fps ? +v.fps.toFixed(3) : '?'} fps`],
+    ['Output resolution', `${ov.w || '?'}×${ov.h || '?'} @ ${ov.fps ? +ov.fps.toFixed(3) : '?'} fps`],
+    ['Compression', red >= 0 ? `${red.toFixed(1)}% smaller` : `${(-red).toFixed(1)}% larger`],
+    ['Speed', p.speed > 1 ? `${p.speed}× fast forward (${fmtDur(meta.duration)} → ${fmtDur(p.outDur)})` : 'Normal (1×)'],
+    ['Processing duration', fmtDur(secs)],
+    ['Engine', p.engine === 'webcodecs' ? 'Hardware (WebCodecs)' : `FFmpeg (${ffThreads ? FF_THREADS + ' threads' : 'single-threaded'})`],
+    ['Audio status', audioStatus],
+    ['Output format', p.mode === 'remux' ? 'MP4 (H.264 copied, fast-start)'
+      : `MP4 · H.264${p.engine === 'webcodecs' ? '' : ' High'} · fast-start${p.mode === 'size' ? ` · ${p.engine === 'webcodecs' ? 'hardware' : s.onePass ? 'single pass' : 'two-pass'} ${p.vk} kbps` : ''}`],
+    ['Verification', check.items.map(i => (i.ok ? '✓ ' : '✕ ') + i.text).join('<br>')]
+  ];
+  $('resTable').innerHTML = rows.map(([k, val]) => `<tr><td>${k}</td><td>${k === 'Verification' ? val : esc(val)}</td></tr>`).join('');
+  $('resVideo').src = outURL;
+  const base = file.name.replace(/\.[^.]+$/, '').replace(/[^\w\- ().]+/g, '_') || 'video';
+  $('dlBtn').href = outURL;
+  $('dlBtn').download = `${base}${p.speed > 1 ? `_${p.speed}x` : ''}_compressed.mp4`;
+  if (!check.ok) msg('resMsgs', 'err', 'The output did not pass every check (see Verification below). It may not play correctly everywhere.');
+  if (p.mode === 'remux') msg('resMsgs', 'info', 'Remux copies the streams without re-encoding, so the size stays about the same and quality is untouched.');
+  else if (size >= orig) msg('resMsgs', 'warn', 'The compressed file is not smaller than the original. The original is probably already efficiently encoded — keep it, or choose a smaller target / higher CRF.');
+  if (p.mode === 'crf' && size > HARD_MAX_MB * MB) {
+    msg('resMsgs', 'warn', `The result is ${fmtMB(size)}, above ${HARD_MAX_MB} MB. <br><button class="btn" id="fitBtn">Fit to ${HARD_MAX_MB} MB</button>`);
+    $('fitBtn').onclick = () => { document.querySelector(`input[name=size][value="${HARD_MAX_MB}"]`).checked = true; refresh(); compress(); };
+  }
+  if (p.mode === 'size' && size > p.targetBytes * 1.02) msg('resMsgs', 'warn', `Final size is ${fmtMB(size)}, a little above the ${s.targetMB} MB target.`);
+  else if (check.ok) msg('resMsgs', 'ok', 'Done. The MP4 is verified and ready to download.');
+  $('resCard').classList.remove('hide');
+  $('resCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function cancel() {
+  if (!busy) return;
+  cancelled = true;
+  $('cancelBtn').disabled = true;
+  $('pPhase').textContent = 'Cancelling…';
+  if (currentConv) { try { await currentConv.cancel(); } catch {} return; }   /* hardware engine stops cleanly */
+  if (!ff) return;
+  /* exec can't be interrupted, so stop the worker and start a fresh engine */
+  try { ff.terminate(); } catch {}
+  ff = null; mounted = false;
+  if (file) { try { await getFF(); await mountInput(file, (file.name.split('.').pop() || '').toLowerCase()); } catch {} }
+}
+
+/* ============================================================
+   Reset / again
+============================================================ */
+async function clearSession() {
+  if (outURL) { URL.revokeObjectURL(outURL); outURL = null; }
+  if (inURL) { URL.revokeObjectURL(inURL); inURL = null; }
+  $('preview').removeAttribute('src'); $('preview').load();
+  $('resVideo').removeAttribute('src'); $('resVideo').load();
+  if (ff) {
+    await ff.deleteFile('/out.mp4').catch(() => {});
+    if (mounted) { await ff.unmount('/in').catch(() => {}); mounted = false; }
+    else if (inPath) await ff.deleteFile(inPath).catch(() => {});
+  }
+  file = null; meta = null; inPath = null;
+}
+
+$('againBtn').addEventListener('click', () => { $('settingsCard').scrollIntoView({ behavior: 'smooth' }); });
+$('anotherBtn').addEventListener('click', async () => { if (busy) return; await resetAll(); fileIn.click(); });
+$('resetBtn').addEventListener('click', resetAll);
+async function resetAll() {
+  if (busy) return;
+  await clearSession();
+  $('fileInfo').style.display = 'none';
+  $('resCard').classList.add('hide');
+  $('progCard').classList.add('hide');
+  clearMsgs('fileErr', 'metaMsgs', 'estMsgs');
+  $('est').innerHTML = '<span class="note">Choose a video to see the estimate.</span>';
+  document.querySelector('input[name=size][value="30"]').checked = true;
+  refresh();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+refresh();
+/* Hooks for automated testing */
+window.SVC = { handleFile, compress, getFF, probeMB, state: () => ({ file, meta, busy, ffThreads }) };
+</script>
+</body>
+</html>
